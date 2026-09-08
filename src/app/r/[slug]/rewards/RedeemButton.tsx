@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { LiveRedemptionQR } from "./LiveRedemptionQR";
 
 export function RedeemButton({ rewardId, disabled }: { rewardId: string; disabled: boolean }) {
   const router = useRouter();
-  const [code, setCode] = useState<string | null>(null);
+  const [redemption, setRedemption] = useState<{ id: string; code: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -20,17 +21,12 @@ export function RedeemButton({ rewardId, disabled }: { rewardId: string; disable
     const data = await res.json();
     setBusy(false);
     if (!res.ok) return setError(data.error);
-    setCode(data.code);
+    setRedemption({ id: data.redemptionId, code: data.code });
     router.refresh();
   }
 
-  if (code) {
-    return (
-      <div className="text-center">
-        <p className="text-xs text-stone-500">Show this at the counter</p>
-        <p className="font-mono text-lg font-semibold tracking-widest">{code}</p>
-      </div>
-    );
+  if (redemption) {
+    return <LiveRedemptionQR redemptionId={redemption.id} initialCode={redemption.code} />;
   }
 
   return (

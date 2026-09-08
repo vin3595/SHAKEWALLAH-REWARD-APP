@@ -77,9 +77,20 @@ matching a white-label-per-brand app) — a customer needs to belong to
    customer has a membership at, each with its own balance
    (`src/lib/membership.ts#listCustomerWallets`).
 6. Redeeming a reward at `/r/[slug]/rewards` debits that restaurant's
-   membership and issues a short code; staff mark it fulfilled once
-   handed over. A code from one restaurant can't be fulfilled by another
-   restaurant's staff (verified — see git history for the test run).
+   membership and issues a redemption. Instead of a static code, the
+   screen shows a **live QR** (`LiveRedemptionQR.tsx`) that re-signs and
+   re-renders every 5 seconds (`src/lib/redemptionToken.ts`, 15s expiry)
+   — a screenshot of it stops working almost immediately, closing the
+   "share the code with a friend" hole a static code/QR has. The plain
+   text code is still shown underneath as a manual-entry fallback.
+7. Staff scan that QR with their device camera (`QrScanner.tsx`, using
+   `jsqr` — no native deps). A scan only **looks up** the redemption
+   (`/api/staff/redemptions/lookup`) and shows the customer's name for a
+   visual "is that you?" check — it never fulfills by itself. Staff tap
+   "Confirm & fulfil" to actually mark it used, via the same
+   `/api/redemptions/[code]/fulfill` route the manual fallback uses. A
+   code from one restaurant can't be looked up or fulfilled by another
+   restaurant's staff (verified end to end, including token expiry).
 
 Guardrails already in place: a bill number can only be claimed once per
 outlet, a customer is capped at 5 claims/day platform-wide, and a
