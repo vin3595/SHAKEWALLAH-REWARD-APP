@@ -1,0 +1,190 @@
+// Prisma schema for ShakeWallah Rewards.
+// Local dev uses SQLite (zero setup). Swap the datasource provider to
+// "postgresql" for production — see README for the Supabase migration note.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// One row per brand (ShakeWallah is the first). Every customer-facing
+// table is scoped to a tenant so a second brand never touches the first.
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  themeJson String // JSON: { logoUrl, primaryColor, displayName }
+  createdAt DateTime @default(now())
+
+  outlets    Outlet[]
+  customers  Customer[]
+  rewards    Reward[]
+  staffUsers StaffUser[]
+}
+
+// One physical location. qrToken is printed once and never rotates.
+model Outlet {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  qrToken   String   @unique
+  createdAt DateTime @default(now())
+
+  billClaims BillClaim[]
+  staffUsers StaffUser[]
+
+  @@index([tenantId])
+}
+
+// A customer is scoped per tenant: the same phone number is a distinct
+// customer in each brand's app.
+model Customer {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  phone     String
+  name      String?
+  createdAt DateTime @default(now())
+
+  billClaims     BillClaim[]
+  ledgerEntries  PointsLedgerEntry[]
+  redemptions    Redemption[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+enum StaffRole {
+  OUTLET_STAFF
+  BRAND_ADMIN
+}
+
+// Outlet staff approve claims and fulfil redemptions; brand admins also
+// manage the rewards catalog. outletId is null for a brand admin (they
+// aren't tied to one location).
+model StaffUser {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  outletId  String?
+  outlet    Outlet?   @relation(fields: [outletId], references: [id])
+  phone     String
+  name      String
+  role      StaffRole @default(OUTLET_STAFF)
+  createdAt DateTime  @default(now())
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+enum OtpPurpose {
+  CUSTOMER
+  STAFF
+}
+
+// Short-lived login codes. Not linked to a Customer/StaffUser record yet —
+// a first-time customer is created at verify time, not at request time.
+model OtpCode {
+  id         String     @id @default(cuid())
+  tenantId   String
+  phone      String
+  purpose    OtpPurpose
+  code       String
+  attempts   Int        @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([tenantId, phone, purpose])
+}
+
+enum ClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// A customer's self-reported bill, pending outlet staff confirmation.
+// (outletId, billNo) is unique so the same bill can't be claimed twice.
+model BillClaim {
+  id            String      @id @default(cuid())
+  outletId      String
+  outlet        Outlet      @relation(fields: [outletId], references: [id])
+  customerId    String
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  billNo        String
+  amountPaise   Int
+  photoUrl      String
+  status        ClaimStatus @default(PENDING)
+  rejectReason  String?
+  reviewedById  String?
+  reviewedAt    DateTime?
+  createdAt     DateTime    @default(now())
+
+  ledgerEntry PointsLedgerEntry?
+
+  @@unique([outletId, billNo])
+  @@index([customerId])
+  @@index([outletId, status])
+}
+
+// Append-only. A customer's balance is Σ(delta), never a stored column —
+// see the architecture plan for why.
+model PointsLedgerEntry {
+  id           String      @id @default(cuid())
+  customerId   String
+  customer     Customer    @relation(fields: [customerId], references: [id])
+  delta        Int
+  reason       String
+  billClaimId  String?     @unique
+  billClaim    BillClaim?  @relation(fields: [billClaimId], references: [id])
+  redemptionId String?     @unique
+  redemption   Redemption? @relation(fields: [redemptionId], references: [id])
+  createdAt    DateTime    @default(now())
+
+  @@index([customerId, createdAt])
+}
+
+// Per-tenant catalog, editable by a brand admin.
+model Reward {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  title       String
+  description String?
+  pointsCost  Int
+  stock       Int?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  redemptions Redemption[]
+
+  @@index([tenantId, active])
+}
+
+enum RedemptionStatus {
+  ISSUED
+  FULFILLED
+  EXPIRED
+}
+
+// code is shown at the counter; staff mark it fulfilled once redeemed.
+model Redemption {
+  id            String           @id @default(cuid())
+  customerId    String
+  customer      Customer         @relation(fields: [customerId], references: [id])
+  rewardId      String
+  reward        Reward           @relation(fields: [rewardId], references: [id])
+  code          String           @unique
+  status        RedemptionStatus @default(ISSUED)
+  fulfilledById String?
+  fulfilledAt   DateTime?
+  createdAt     DateTime         @default(now())
+
+  ledgerEntry PointsLedgerEntry?
+}

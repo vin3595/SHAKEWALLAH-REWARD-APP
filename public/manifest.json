@@ -1,0 +1,10 @@
+{
+  "name": "ShakeWallah Rewards",
+  "short_name": "ShakeWallah",
+  "description": "Earn and redeem ShakeWallah loyalty points.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FBF5EC",
+  "theme_color": "#C13A56",
+  "icons": []
+}
