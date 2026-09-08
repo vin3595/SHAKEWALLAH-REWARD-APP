@@ -1,23 +1,25 @@
-# ShakeWallah Rewards
+# Rewards — universal restaurant loyalty platform
 
-A points-based loyalty PWA for ShakeWallah, built on a multi-tenant data
-model so any cafe, restaurant or QSR can run the same platform under its
-own brand later. See the full architecture write-up (data model, earn/redeem
-flows, phased roadmap) shared alongside this repo.
+One customer app, many independent restaurant loyalty programs.
+ShakeWallah is restaurant #1, not a special case — every restaurant is a
+row in the same database, and a customer holds one global identity with a
+**separate wallet per restaurant** ("ShakeWallah 50pts / Bite Box 20pts",
+both in the same account). See the architecture write-up shared alongside
+this repo for the full platform vision and phased roadmap.
 
 ## Stack
 
-- **App**: Next.js (App Router) + Tailwind, customer app + staff dashboard in one codebase
+- **App**: Next.js (App Router) + Tailwind — customer app, staff dashboard, and restaurant CRM all in one codebase
 - **Database**: SQLite for local dev via Prisma, swappable to Postgres for production
-- **Auth**: Phone number + OTP (dev mode logs the code to the console — no SMS provider wired up yet)
-- **Bill photos**: saved to `public/uploads` in dev — swap for Supabase Storage / S3 in production
+- **Auth**: Phone number + OTP (dev mode logs the code to the console; MSG91 wiring included, see below)
+- **Bill photos**: saved to `public/uploads` in dev — swap for object storage in production
 
 ## Getting started
 
 ```bash
 npm install                 # also runs `prisma generate`
 npm run db:migrate          # creates prisma/dev.db and applies the schema
-npm run db:seed             # seeds the ShakeWallah tenant, one outlet, staff logins, rewards
+npm run db:seed             # seeds two demo restaurants (ShakeWallah + Bite Box)
 npm run dev
 ```
 
@@ -26,34 +28,101 @@ Open http://localhost:3000.
 Seeded staff logins (OTP, dev mode — the code is returned in the API
 response and printed server-side, no real SMS is sent):
 
-| Phone | Role |
-|---|---|
-| `9999900001` | Brand admin (`/staff/login`) |
-| `9999900002` | Outlet staff (`/staff/login`) |
+| Phone | Restaurant | Role |
+|---|---|---|
+| `9999900001` | ShakeWallah | Brand admin (`/staff/shakewallah/login`) |
+| `9999900002` | ShakeWallah | Outlet staff (`/staff/shakewallah/login`) |
+| `9999900003` | Bite Box | Brand admin (`/staff/bite-box/login`) |
+| `9999900004` | Bite Box | Outlet staff (`/staff/bite-box/login`) |
 
 Any 10-digit number works for a customer login at `/login` — first sign-in
-creates the account.
+creates the account, and that same identity works across every restaurant
+on the platform. Bite Box is placeholder demo data, not a real brand — the
+point is to have a second restaurant to demonstrate the universal wallet;
+replace or remove it once you're onboarding real restaurant #2.
 
-The seeded outlet's QR code points to `/scan/shakewallah-main`. In a real
-rollout this URL is what gets printed and put at the counter.
+QR tokens seeded: `/scan/shakewallah-main`, `/scan/bitebox-indiranagar`.
+
+## Identity model — the part that matters most
+
+- **Customer** is global: one row per phone number, full stop.
+- **Membership** is the wallet: one row per (customer, restaurant) pair,
+  holding a tier. This is what "My Rewards" actually lists one row per —
+  not the customer, not the restaurant.
+- **PointsLedgerEntry** and **Redemption** are scoped to a *membership*,
+  not directly to a customer — so ShakeWallah's points and Bite Box's
+  points are two separate, independently-computed balances (Σ of that
+  membership's ledger), even though it's the same person underneath.
+
+This is why the schema uses `Membership` as its own table instead of just
+scoping `Customer` by `restaurantId` (which was last session's model,
+matching a white-label-per-brand app) — a customer needs to belong to
+*many* restaurants at once, each with its own balance.
 
 ## How the core loop works
 
-1. Customer signs in with phone + OTP, scans the outlet's QR, and submits a
-   bill number, amount, and a photo at `/scan/[outletToken]`.
-2. This creates a **pending** `BillClaim`. No points are awarded yet.
-3. Outlet staff (or a brand admin, across all outlets) review pending
-   claims at `/staff` and approve or reject them.
-4. Approval writes a row to `PointsLedgerEntry` — 1 point per ₹10 spent by
-   default (`src/lib/points.ts`). A customer's balance is always the sum of
-   their ledger, never a stored column (see `prisma/schema.prisma`'s
-   comments for why).
-5. Customers redeem rewards at `/rewards`; redemption issues a short code,
-   which staff mark fulfilled at `/staff` once handed over.
+1. Customer signs in once (phone + OTP), browses **Discover** on the home
+   page for restaurants they're not a member of yet, and scans a QR at any
+   outlet.
+2. Scanning submits a bill number, amount, and photo — creating a
+   **pending** `BillClaim`. No points awarded yet, no membership required
+   to exist beforehand.
+3. That restaurant's staff (outlet staff for their outlet, brand admin
+   across all outlets) review pending claims at `/staff/[slug]` and
+   approve or reject.
+4. Approval gets-or-creates a `Membership` for (customer, that
+   restaurant) and writes a ledger row — 1 point per ₹10 spent by default
+   (`src/lib/points.ts`).
+5. The home page's **My Rewards** section lists every restaurant the
+   customer has a membership at, each with its own balance
+   (`src/lib/membership.ts#listCustomerWallets`).
+6. Redeeming a reward at `/r/[slug]/rewards` debits that restaurant's
+   membership and issues a short code; staff mark it fulfilled once
+   handed over. A code from one restaurant can't be fulfilled by another
+   restaurant's staff (verified — see git history for the test run).
 
 Guardrails already in place: a bill number can only be claimed once per
-outlet, a customer is capped at 5 claims/day, and a redemption code can
-only be fulfilled once.
+outlet, a customer is capped at 5 claims/day platform-wide, and a
+redemption code can only be fulfilled once.
+
+## Restaurant CRM (segments & campaigns)
+
+A brand admin's dashboard (`/staff/[slug]/campaigns`) can:
+
+1. **Define a segment** — a rule evaluated live against that restaurant's
+   memberships, not a stored snapshot (`src/lib/segments.ts`):
+   - `INACTIVE_DAYS` — no ledger activity in N days (win-back)
+   - `MIN_LIFETIME_SPEND` — lifetime approved bill total ≥ ₹N
+   - `MIN_VISITS` — approved bill claims ≥ N
+2. **Create a campaign** — a message + optional bonus points, targeting a
+   segment or the whole membership base.
+3. **Send it** — credits the bonus to every matched membership's ledger
+   and logs a `CampaignRecipient` row per recipient (the basis for
+   opens/redemptions/ROI reporting later).
+
+What this is *not* yet: there's no actual push/SMS delivery of the
+campaign message — "sending" credits points and records who was targeted,
+but customers don't get notified out-of-band. That's the natural next
+piece once notifications exist at all (see below).
+
+## What's stubbed or deferred
+
+Deliberately out of scope for this pass — flagged here instead of half-built:
+
+- **Discovery UI**: the home page lists restaurants; there's no map,
+  distance/geolocation, search, or category filters yet. `Restaurant` has
+  `lat`/`lng`/`category` fields ready for this — needs a maps provider
+  (Google Maps/Places or Mapbox) and an API key.
+- **Bill OCR**: claims require the customer to type the bill number and
+  amount by hand; there's no automatic reading of the bill photo. Needs a
+  vision/OCR provider (Google Cloud Vision, or a multimodal LLM call).
+- **Referrals, streaks, badges, tiers beyond "Member"**: schema has room
+  (`Membership.tier` is just a string today) but no logic yet.
+- **POS integrations**: bill claims are entirely manual/self-reported.
+- **Campaign delivery**: see above — segments and bonuses work, outbound
+  notification doesn't exist.
+- **PWA installability**: `public/manifest.json` exists but has no icons
+  yet, and there's no service worker for offline caching.
 
 ## SMS provider setup (MSG91)
 
@@ -69,24 +138,12 @@ MSG91_OTP_TEMPLATE_ID=<your template id>  # Console → Flow → your OTP templa
 You'll need a DLT-registered transactional template (required for Indian
 SMS) with a single variable — name it `OTP` — e.g.:
 
-> Your ShakeWallah verification code is ##OTP##. Valid for 10 minutes.
+> Your verification code is ##OTP##. Valid for 10 minutes.
 
 Once both env vars are set, `requestOtp` (`src/lib/otp.ts`) sends a real
 SMS automatically — no code changes needed. To use a different provider
 (Twilio, etc.), only `src/lib/sms.ts` needs to change; its two exports
 (`isSmsConfigured`, `sendOtpSms`) are the whole contract.
-
-## What's stubbed for later
-
-- **Bill photo storage**: local disk under `public/uploads`. Swap
-  `src/lib/storage.ts` for Supabase Storage / S3 with signed URLs.
-- **PWA installability**: `public/manifest.json` exists but has no icons
-  yet, and there's no service worker for offline caching — add both once
-  brand assets (logo, colors) are available.
-- **Multi-tenant routing**: the schema is fully multi-tenant (every table
-  carries `tenantId`), but this deployment only ever serves one tenant,
-  picked by the `TENANT_SLUG` env var. Subdomain-based routing across
-  brands is a later-phase concern, not a v1 one.
 
 ## Moving to Postgres
 
@@ -94,21 +151,23 @@ Local dev uses SQLite for zero-setup. For production:
 
 1. In `prisma/schema.prisma`, change the datasource `provider` to `"postgresql"`.
 2. Swap the driver adapter in `src/lib/prisma.ts` (and `prisma/seed.ts`)
-   from `@prisma/adapter-better-sqlite3` to `@prisma/adapter-pg` (or
-   Supabase's recommended adapter).
-3. Point `DATABASE_URL` at your Postgres instance (Supabase's connection
-   string works directly) and re-run `prisma migrate dev`.
+   from `@prisma/adapter-better-sqlite3` to `@prisma/adapter-pg`.
+3. Point `DATABASE_URL` at your Postgres instance and re-run `prisma migrate dev`.
 
 ## Project layout
 
 ```
-prisma/schema.prisma       data model (tenants, outlets, customers, staff,
-                            bill claims, points ledger, rewards, redemptions)
-prisma/seed.ts             seeds the ShakeWallah tenant + demo data
-src/lib/                   session/OTP auth, points rule, storage, tenant lookup
-src/app/(customer pages)   /login, / (home), /scan/[token], /rewards
-src/app/staff/             staff OTP login + claim approval / redemption dashboard
-src/app/api/                route handlers backing all of the above
+prisma/schema.prisma          data model — Restaurant, Outlet, Customer (global),
+                               Membership (the wallet), staff, bill claims,
+                               points ledger, rewards, redemptions, Segment/Campaign
+prisma/seed.ts                seeds ShakeWallah + a demo second restaurant
+src/lib/                      session/OTP auth, points rule, storage, restaurant/
+                               membership/segment lookups
+src/app/(customer pages)      /login, / (wallet + discovery home), /r/[slug]
+                               (restaurant profile + rewards), /scan/[token]
+src/app/staff/[slug]/         staff OTP login, claim approval + redemption
+                               dashboard, and /campaigns (brand-admin CRM)
+src/app/api/                  route handlers backing all of the above
 ```
 
 `.claude/`, `.agents/`, `.windsurf/`, and `skills-lock.json` at the repo

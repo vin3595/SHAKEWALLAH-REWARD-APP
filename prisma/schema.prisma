@@ -1,6 +1,11 @@
-// Prisma schema for ShakeWallah Rewards.
+// Prisma schema for the universal restaurant rewards platform.
 // Local dev uses SQLite (zero setup). Swap the datasource provider to
-// "postgresql" for production — see README for the Supabase migration note.
+// "postgresql" for production — see README for the Prisma Postgres note.
+//
+// Core identity model: Customer is GLOBAL (one identity across every
+// restaurant), and Membership is the per-restaurant wallet — that's what
+// makes "ShakeWallah 650pts / Bite Box 300pts" show up in one app instead
+// of requiring N separate white-label apps.
 
 generator client {
   provider = "prisma-client"
@@ -11,52 +16,83 @@ datasource db {
   provider = "sqlite"
 }
 
-// One row per brand (ShakeWallah is the first). Every customer-facing
-// table is scoped to a tenant so a second brand never touches the first.
-model Tenant {
-  id        String   @id @default(cuid())
-  slug      String   @unique
-  name      String
-  themeJson String // JSON: { logoUrl, primaryColor, displayName }
-  createdAt DateTime @default(now())
+// One row per restaurant/café/QSR on the platform. ShakeWallah is
+// restaurant #1, not a special case — every other restaurant is a row
+// here, discoverable in the same customer app.
+model Restaurant {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  name          String
+  category      String // "Café", "QSR", "Fine dining", "Bakery", ...
+  city          String?
+  description   String?
+  coverImageUrl String?
+  lat           Float?
+  lng           Float?
+  themeJson     String // JSON: { primaryColor, logoUrl } for the restaurant's profile accent
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
 
   outlets    Outlet[]
-  customers  Customer[]
   rewards    Reward[]
   staffUsers StaffUser[]
+  memberships Membership[]
+  segments   Segment[]
+  campaigns  Campaign[]
+
+  @@index([active, category])
 }
 
 // One physical location. qrToken is printed once and never rotates.
 model Outlet {
-  id        String   @id @default(cuid())
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
-  name      String
-  qrToken   String   @unique
-  createdAt DateTime @default(now())
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  name         String
+  qrToken      String     @unique
+  address      String?
+  lat          Float?
+  lng          Float?
+  createdAt    DateTime   @default(now())
 
   billClaims BillClaim[]
   staffUsers StaffUser[]
 
-  @@index([tenantId])
+  @@index([restaurantId])
 }
 
-// A customer is scoped per tenant: the same phone number is a distinct
-// customer in each brand's app.
+// One global identity per phone number. A customer with accounts at 3
+// restaurants is 1 Customer row + 3 Membership rows, not 3 Customers.
 model Customer {
-  id        String   @id @default(cuid())
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
-  phone     String
+  id        String    @id @default(cuid())
+  phone     String    @unique
   name      String?
-  createdAt DateTime @default(now())
+  birthday  DateTime?
+  createdAt DateTime  @default(now())
 
-  billClaims     BillClaim[]
-  ledgerEntries  PointsLedgerEntry[]
-  redemptions    Redemption[]
+  memberships Membership[]
+  billClaims  BillClaim[]
 
-  @@unique([tenantId, phone])
-  @@index([tenantId])
+  @@index([phone])
+}
+
+// The per-restaurant wallet. This is what the "My Rewards" home screen
+// actually lists one row per — not the Customer, not the Restaurant.
+model Membership {
+  id           String     @id @default(cuid())
+  customerId   String
+  customer     Customer   @relation(fields: [customerId], references: [id])
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  tier         String     @default("Member")
+  joinedAt     DateTime   @default(now())
+
+  ledgerEntries      PointsLedgerEntry[]
+  redemptions        Redemption[]
+  campaignRecipients CampaignRecipient[]
+
+  @@unique([customerId, restaurantId])
+  @@index([restaurantId])
 }
 
 enum StaffRole {
@@ -64,22 +100,22 @@ enum StaffRole {
   BRAND_ADMIN
 }
 
-// Outlet staff approve claims and fulfil redemptions; brand admins also
-// manage the rewards catalog. outletId is null for a brand admin (they
-// aren't tied to one location).
+// Outlet staff approve claims and fulfil redemptions for their outlet;
+// brand admins see/manage the whole restaurant. outletId is null for a
+// brand admin.
 model StaffUser {
-  id        String    @id @default(cuid())
-  tenantId  String
-  tenant    Tenant    @relation(fields: [tenantId], references: [id])
-  outletId  String?
-  outlet    Outlet?   @relation(fields: [outletId], references: [id])
-  phone     String
-  name      String
-  role      StaffRole @default(OUTLET_STAFF)
-  createdAt DateTime  @default(now())
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  outletId     String?
+  outlet       Outlet?    @relation(fields: [outletId], references: [id])
+  phone        String
+  name         String
+  role         StaffRole  @default(OUTLET_STAFF)
+  createdAt    DateTime   @default(now())
 
-  @@unique([tenantId, phone])
-  @@index([tenantId])
+  @@unique([restaurantId, phone])
+  @@index([restaurantId])
 }
 
 enum OtpPurpose {
@@ -87,20 +123,22 @@ enum OtpPurpose {
   STAFF
 }
 
-// Short-lived login codes. Not linked to a Customer/StaffUser record yet —
-// a first-time customer is created at verify time, not at request time.
+// Short-lived login codes. restaurantId is null for CUSTOMER (phone is
+// globally unique, no restaurant context needed to log a customer in) and
+// required for STAFF (the same phone could staff two different
+// restaurants with separate accounts).
 model OtpCode {
-  id         String     @id @default(cuid())
-  tenantId   String
-  phone      String
-  purpose    OtpPurpose
-  code       String
-  attempts   Int        @default(0)
-  expiresAt  DateTime
-  consumedAt DateTime?
-  createdAt  DateTime   @default(now())
+  id           String      @id @default(cuid())
+  restaurantId String?
+  phone        String
+  purpose      OtpPurpose
+  code         String
+  attempts     Int         @default(0)
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  createdAt    DateTime    @default(now())
 
-  @@index([tenantId, phone, purpose])
+  @@index([phone, purpose, restaurantId])
 }
 
 enum ClaimStatus {
@@ -112,19 +150,19 @@ enum ClaimStatus {
 // A customer's self-reported bill, pending outlet staff confirmation.
 // (outletId, billNo) is unique so the same bill can't be claimed twice.
 model BillClaim {
-  id            String      @id @default(cuid())
-  outletId      String
-  outlet        Outlet      @relation(fields: [outletId], references: [id])
-  customerId    String
-  customer      Customer    @relation(fields: [customerId], references: [id])
-  billNo        String
-  amountPaise   Int
-  photoUrl      String
-  status        ClaimStatus @default(PENDING)
-  rejectReason  String?
-  reviewedById  String?
-  reviewedAt    DateTime?
-  createdAt     DateTime    @default(now())
+  id           String      @id @default(cuid())
+  outletId     String
+  outlet       Outlet      @relation(fields: [outletId], references: [id])
+  customerId   String
+  customer     Customer    @relation(fields: [customerId], references: [id])
+  billNo       String
+  amountPaise  Int
+  photoUrl     String
+  status       ClaimStatus @default(PENDING)
+  rejectReason String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime    @default(now())
 
   ledgerEntry PointsLedgerEntry?
 
@@ -133,12 +171,12 @@ model BillClaim {
   @@index([outletId, status])
 }
 
-// Append-only. A customer's balance is Σ(delta), never a stored column —
+// Append-only. A wallet's balance is Σ(delta), never a stored column —
 // see the architecture plan for why.
 model PointsLedgerEntry {
   id           String      @id @default(cuid())
-  customerId   String
-  customer     Customer    @relation(fields: [customerId], references: [id])
+  membershipId String
+  membership   Membership  @relation(fields: [membershipId], references: [id])
   delta        Int
   reason       String
   billClaimId  String?     @unique
@@ -147,24 +185,24 @@ model PointsLedgerEntry {
   redemption   Redemption? @relation(fields: [redemptionId], references: [id])
   createdAt    DateTime    @default(now())
 
-  @@index([customerId, createdAt])
+  @@index([membershipId, createdAt])
 }
 
-// Per-tenant catalog, editable by a brand admin.
+// Per-restaurant catalog, editable by that restaurant's brand admin.
 model Reward {
-  id          String   @id @default(cuid())
-  tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id])
-  title       String
-  description String?
-  pointsCost  Int
-  stock       Int?
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  title        String
+  description  String?
+  pointsCost   Int
+  stock        Int?
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
 
   redemptions Redemption[]
 
-  @@index([tenantId, active])
+  @@index([restaurantId, active])
 }
 
 enum RedemptionStatus {
@@ -176,8 +214,8 @@ enum RedemptionStatus {
 // code is shown at the counter; staff mark it fulfilled once redeemed.
 model Redemption {
   id            String           @id @default(cuid())
-  customerId    String
-  customer      Customer         @relation(fields: [customerId], references: [id])
+  membershipId  String
+  membership    Membership       @relation(fields: [membershipId], references: [id])
   rewardId      String
   reward        Reward           @relation(fields: [rewardId], references: [id])
   code          String           @unique
@@ -187,4 +225,69 @@ model Redemption {
   createdAt     DateTime         @default(now())
 
   ledgerEntry PointsLedgerEntry?
+}
+
+// --- CRM / campaign engine (V1 slice of the "restaurant CRM" vision) ---
+
+enum SegmentRuleType {
+  INACTIVE_DAYS // no ledger activity in the last N days (win-back)
+  MIN_LIFETIME_SPEND // lifetime approved bill amount >= N rupees
+  MIN_VISITS // count of approved bill claims >= N
+}
+
+// A restaurant-defined customer segment, evaluated on demand (no stored
+// membership list — segments are rules, not snapshots, so they stay
+// accurate as customers earn/spend).
+model Segment {
+  id           String          @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant      @relation(fields: [restaurantId], references: [id])
+  name         String
+  ruleType     SegmentRuleType
+  ruleValue    Int
+  createdAt    DateTime        @default(now())
+
+  campaigns Campaign[]
+
+  @@index([restaurantId])
+}
+
+enum CampaignStatus {
+  DRAFT
+  SENT
+}
+
+// V1 campaign = a message + an optional bonus-points reward, sent once to
+// everyone in a segment (or the whole restaurant if segmentId is null).
+// No push/SMS delivery yet — see CampaignRecipient and the README.
+model Campaign {
+  id           String         @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant     @relation(fields: [restaurantId], references: [id])
+  segmentId    String?
+  segment      Segment?       @relation(fields: [segmentId], references: [id])
+  name         String
+  message      String
+  bonusPoints  Int            @default(0)
+  status       CampaignStatus @default(DRAFT)
+  createdAt    DateTime       @default(now())
+  sentAt       DateTime?
+
+  recipients CampaignRecipient[]
+
+  @@index([restaurantId])
+}
+
+// One row per membership a campaign was sent to — the basis for the
+// "opens / redemptions / ROI" reporting the CRM vision calls for, even
+// though only sentAt is populated in V1.
+model CampaignRecipient {
+  id           String     @id @default(cuid())
+  campaignId   String
+  campaign     Campaign   @relation(fields: [campaignId], references: [id])
+  membershipId String
+  membership   Membership @relation(fields: [membershipId], references: [id])
+  sentAt       DateTime   @default(now())
+
+  @@unique([campaignId, membershipId])
 }

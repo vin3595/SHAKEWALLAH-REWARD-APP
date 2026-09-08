@@ -16,7 +16,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const claim = await prisma.billClaim.findUnique({ where: { id }, include: { outlet: true } });
-  if (!claim || claim.outlet.tenantId !== session!.tenantId) {
+  if (!claim || claim.outlet.restaurantId !== session!.restaurantId) {
     return NextResponse.json({ error: "Claim not found." }, { status: 404 });
   }
   if (session!.role === "OUTLET_STAFF" && claim.outletId !== session!.outletId) {

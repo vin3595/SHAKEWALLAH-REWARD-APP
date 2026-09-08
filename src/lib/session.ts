@@ -14,8 +14,8 @@ function secretKey() {
 }
 
 export type SessionPayload =
-  | { kind: "customer"; sub: string; tenantId: string }
-  | { kind: "staff"; sub: string; tenantId: string; role: StaffRole; outletId: string | null };
+  | { kind: "customer"; sub: string }
+  | { kind: "staff"; sub: string; restaurantId: string; role: StaffRole; outletId: string | null };
 
 export async function createSessionCookie(payload: SessionPayload) {
   const token = await new SignJWT({ ...payload })

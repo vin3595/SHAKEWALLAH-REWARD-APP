@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requestOtp } from "@/lib/otp";
-import { getCurrentTenant } from "@/lib/tenant";
+import { getRestaurantBySlug } from "@/lib/restaurant";
 
 const schema = z.object({
   phone: z.string().regex(/^[0-9]{10}$/, "Enter a 10-digit phone number."),
   purpose: z.enum(["CUSTOMER", "STAFF"]),
+  restaurantSlug: z.string().optional(),
 });
 
 export async function POST(req: Request) {
@@ -14,20 +15,28 @@ export async function POST(req: Request) {
   if (!body.success) {
     return NextResponse.json({ error: body.error.issues[0].message }, { status: 400 });
   }
-  const { phone, purpose } = body.data;
-  const tenant = await getCurrentTenant();
+  const { phone, purpose, restaurantSlug } = body.data;
 
+  let restaurantId: string | null = null;
   if (purpose === "STAFF") {
+    if (!restaurantSlug) {
+      return NextResponse.json({ error: "Missing restaurant." }, { status: 400 });
+    }
+    const restaurant = await getRestaurantBySlug(restaurantSlug);
+    if (!restaurant) {
+      return NextResponse.json({ error: "Unknown restaurant." }, { status: 404 });
+    }
     const staff = await prisma.staffUser.findUnique({
-      where: { tenantId_phone: { tenantId: tenant.id, phone } },
+      where: { restaurantId_phone: { restaurantId: restaurant.id, phone } },
     });
     if (!staff) {
-      return NextResponse.json({ error: "This number isn't registered as staff." }, { status: 404 });
+      return NextResponse.json({ error: "This number isn't registered as staff here." }, { status: 404 });
     }
+    restaurantId = restaurant.id;
   }
 
   try {
-    const { devCode } = await requestOtp(tenant.id, phone, purpose);
+    const { devCode } = await requestOtp(restaurantId, phone, purpose);
     return NextResponse.json({ ok: true, devCode });
   } catch (err) {
     console.error("[otp] send failed", err);

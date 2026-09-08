@@ -1,31 +1,37 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
+import { getRestaurantBySlug } from "@/lib/restaurant";
 import { prisma } from "@/lib/prisma";
-import { getCurrentTenant } from "@/lib/tenant";
-import { getCustomerBalance } from "@/lib/balance";
+import { getMembershipBalance } from "@/lib/membership";
 import { RedeemButton } from "./RedeemButton";
 
-export default async function RewardsPage() {
+export default async function RestaurantRewardsPage({ params }: { params: Promise<{ slug: string }> }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.kind === "staff") redirect("/staff");
+  if (session.kind === "staff") redirect("/staff/login");
 
-  const tenant = await getCurrentTenant();
-  const [rewards, balance] = await Promise.all([
-    prisma.reward.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: { pointsCost: "asc" } }),
-    getCustomerBalance(session.sub),
+  const { slug } = await params;
+  const restaurant = await getRestaurantBySlug(slug);
+  if (!restaurant) notFound();
+
+  const [rewards, membership] = await Promise.all([
+    prisma.reward.findMany({ where: { restaurantId: restaurant.id, active: true }, orderBy: { pointsCost: "asc" } }),
+    prisma.membership.findUnique({
+      where: { customerId_restaurantId: { customerId: session.sub, restaurantId: restaurant.id } },
+    }),
   ]);
+  const balance = membership ? await getMembershipBalance(membership.id) : 0;
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col gap-6 px-6 py-10">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-rose-700">Rewards</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-rose-700">{restaurant.name}</p>
           <h1 className="text-lg font-semibold">{balance} points available</h1>
         </div>
-        <Link href="/" className="text-sm text-stone-500 underline">
-          Home
+        <Link href={`/r/${restaurant.slug}`} className="text-sm text-stone-500 underline">
+          Back
         </Link>
       </div>
 

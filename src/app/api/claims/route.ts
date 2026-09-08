@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireCustomer } from "@/lib/guards";
 import { saveBillPhoto } from "@/lib/storage";
 
-// Per-customer, per-day cap on pending+approved claims — a basic guard
-// against someone farming the same bill workflow for points abuse.
+// Per-customer, per-day cap across all restaurants — a basic guard
+// against someone farming the bill-claim workflow for points abuse.
 const DAILY_CLAIM_LIMIT = 5;
 
 export async function POST(req: Request) {
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   }
 
   const outlet = await prisma.outlet.findUnique({ where: { qrToken: outletToken } });
-  if (!outlet || outlet.tenantId !== session!.tenantId) {
+  if (!outlet) {
     return NextResponse.json({ error: "Unknown outlet QR code." }, { status: 404 });
   }
 

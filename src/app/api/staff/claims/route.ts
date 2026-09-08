@@ -8,7 +8,7 @@ export async function GET() {
 
   const where =
     session!.role === "BRAND_ADMIN"
-      ? { outlet: { tenantId: session!.tenantId }, status: "PENDING" as const }
+      ? { outlet: { restaurantId: session!.restaurantId }, status: "PENDING" as const }
       : { outletId: session!.outletId ?? "__none__", status: "PENDING" as const };
 
   const claims = await prisma.billClaim.findMany({

@@ -15,7 +15,7 @@ function generateCode() {
 // Once MSG91_AUTH_KEY / MSG91_OTP_TEMPLATE_ID are set, this sends a real
 // SMS and never returns the code.
 export async function requestOtp(
-  tenantId: string,
+  restaurantId: string | null,
   phone: string,
   purpose: OtpPurpose
 ) {
@@ -23,7 +23,7 @@ export async function requestOtp(
   const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
   await prisma.otpCode.create({
-    data: { tenantId, phone, purpose, code, expiresAt },
+    data: { restaurantId, phone, purpose, code, expiresAt },
   });
 
   if (isSmsConfigured()) {
@@ -36,13 +36,13 @@ export async function requestOtp(
 }
 
 export async function verifyOtp(
-  tenantId: string,
+  restaurantId: string | null,
   phone: string,
   purpose: OtpPurpose,
   code: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const otp = await prisma.otpCode.findFirst({
-    where: { tenantId, phone, purpose, consumedAt: null },
+    where: { restaurantId, phone, purpose, consumedAt: null },
     orderBy: { createdAt: "desc" },
   });
 

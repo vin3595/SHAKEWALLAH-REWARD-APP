@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export default function StaffLoginPage() {
+export function StaffLoginForm({ restaurantSlug }: { restaurantSlug: string }) {
   const router = useRouter();
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [phone, setPhone] = useState("");
@@ -19,7 +19,7 @@ export default function StaffLoginPage() {
     const res = await fetch("/api/auth/otp/request", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, purpose: "STAFF" }),
+      body: JSON.stringify({ phone, purpose: "STAFF", restaurantSlug }),
     });
     const data = await res.json();
     setBusy(false);
@@ -35,22 +35,17 @@ export default function StaffLoginPage() {
     const res = await fetch("/api/auth/otp/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, code, purpose: "STAFF" }),
+      body: JSON.stringify({ phone, code, purpose: "STAFF", restaurantSlug }),
     });
     const data = await res.json();
     setBusy(false);
     if (!res.ok) return setError(data.error);
-    router.push("/staff");
+    router.push(`/staff/${restaurantSlug}`);
     router.refresh();
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-6 py-16">
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-rose-700">Staff sign-in</p>
-        <h1 className="mt-1 text-2xl font-semibold">ShakeWallah outlet dashboard</h1>
-      </div>
-
+    <>
       {step === "phone" && (
         <form onSubmit={requestOtp} className="flex flex-col gap-4">
           <label className="flex flex-col gap-1 text-sm">
@@ -67,10 +62,7 @@ export default function StaffLoginPage() {
             />
           </label>
           {error && <p className="text-sm text-red-700">{error}</p>}
-          <button
-            disabled={busy}
-            className="rounded bg-rose-700 px-4 py-2 font-medium text-white disabled:opacity-50"
-          >
+          <button disabled={busy} className="rounded bg-rose-700 px-4 py-2 font-medium text-white disabled:opacity-50">
             Send code
           </button>
         </form>
@@ -94,14 +86,11 @@ export default function StaffLoginPage() {
             className="rounded border border-stone-300 px-3 py-2 text-center font-mono text-lg tracking-widest outline-none focus:border-rose-600"
           />
           {error && <p className="text-sm text-red-700">{error}</p>}
-          <button
-            disabled={busy}
-            className="rounded bg-rose-700 px-4 py-2 font-medium text-white disabled:opacity-50"
-          >
+          <button disabled={busy} className="rounded bg-rose-700 px-4 py-2 font-medium text-white disabled:opacity-50">
             Verify &amp; continue
           </button>
         </form>
       )}
-    </main>
+    </>
   );
 }

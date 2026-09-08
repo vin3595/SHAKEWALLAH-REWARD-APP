@@ -16,3 +16,12 @@ export async function requireStaff() {
   }
   return { session, error: null };
 }
+
+export async function requireBrandAdmin() {
+  const { session, error } = await requireStaff();
+  if (error) return { session: null, error };
+  if (session!.role !== "BRAND_ADMIN") {
+    return { session: null, error: NextResponse.json({ error: "Brand admin only." }, { status: 403 }) };
+  }
+  return { session, error: null };
+}

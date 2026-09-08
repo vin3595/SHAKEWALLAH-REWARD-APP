@@ -1,7 +1,7 @@
 {
-  "name": "ShakeWallah Rewards",
-  "short_name": "ShakeWallah",
-  "description": "Earn and redeem ShakeWallah loyalty points.",
+  "name": "Rewards — One app, every restaurant's loyalty program",
+  "short_name": "Rewards",
+  "description": "Earn and redeem loyalty points across every restaurant on the platform.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FBF5EC",

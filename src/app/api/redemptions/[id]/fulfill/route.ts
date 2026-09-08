@@ -11,9 +11,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   const redemption = await prisma.redemption.findUnique({
     where: { code: code.toUpperCase() },
-    include: { customer: true, reward: true },
+    include: { membership: true, reward: true },
   });
-  if (!redemption || redemption.customer.tenantId !== session!.tenantId) {
+  if (!redemption || redemption.membership.restaurantId !== session!.restaurantId) {
     return NextResponse.json({ error: "Unknown redemption code." }, { status: 404 });
   }
   if (redemption.status !== "ISSUED") {

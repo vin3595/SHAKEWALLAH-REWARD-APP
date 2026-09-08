@@ -1,25 +1,31 @@
-import { redirect } from "next/navigation";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
 import { getSession, clearSessionCookie } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { getRestaurantBySlug } from "@/lib/restaurant";
 import { ClaimsList } from "./ClaimsList";
 import { FulfillForm } from "./FulfillForm";
 
-async function signOut() {
+async function signOut(slug: string) {
   "use server";
   await clearSessionCookie();
-  redirect("/staff/login");
+  redirect(`/staff/${slug}/login`);
 }
 
-export default async function StaffPage() {
+export default async function StaffPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const restaurant = await getRestaurantBySlug(slug);
+  if (!restaurant) notFound();
+
   const session = await getSession();
-  if (!session) redirect("/staff/login");
-  if (session.kind === "customer") redirect("/");
+  if (!session || session.kind !== "staff") redirect(`/staff/${slug}/login`);
+  if (session.restaurantId !== restaurant.id) redirect(`/staff/${slug}/login`);
 
   const staff = await prisma.staffUser.findUniqueOrThrow({ where: { id: session.sub } });
 
   const where =
     staff.role === "BRAND_ADMIN"
-      ? { outlet: { tenantId: staff.tenantId }, status: "PENDING" as const }
+      ? { outlet: { restaurantId: restaurant.id }, status: "PENDING" as const }
       : { outletId: staff.outletId ?? "__none__", status: "PENDING" as const };
 
   const claims = await prisma.billClaim.findMany({
@@ -33,11 +39,11 @@ export default async function StaffPage() {
       <header className="flex items-center justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-rose-700">
-            {staff.role === "BRAND_ADMIN" ? "Brand admin" : "Outlet staff"}
+            {restaurant.name} · {staff.role === "BRAND_ADMIN" ? "Brand admin" : "Outlet staff"}
           </p>
           <h1 className="text-lg font-semibold">{staff.name}</h1>
         </div>
-        <form action={signOut}>
+        <form action={signOut.bind(null, slug)}>
           <button className="text-sm text-stone-500 underline">Sign out</button>
         </form>
       </header>
@@ -51,6 +57,17 @@ export default async function StaffPage() {
         <h2 className="text-sm font-medium text-stone-700">Fulfil a redemption</h2>
         <FulfillForm />
       </section>
+
+      {staff.role === "BRAND_ADMIN" && (
+        <section className="flex flex-col gap-3 border-t border-stone-200 pt-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-stone-700">Marketing</h2>
+            <Link href={`/staff/${slug}/campaigns`} className="text-sm text-rose-700 underline">
+              Segments &amp; campaigns →
+            </Link>
+          </div>
+        </section>
+      )}
     </main>
   );
 }

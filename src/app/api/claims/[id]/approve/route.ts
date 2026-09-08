@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireStaff } from "@/lib/guards";
 import { pointsForAmountPaise } from "@/lib/points";
+import { getOrCreateMembership } from "@/lib/membership";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { session, error } = await requireStaff();
@@ -9,7 +10,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
 
   const claim = await prisma.billClaim.findUnique({ where: { id }, include: { outlet: true } });
-  if (!claim || claim.outlet.tenantId !== session!.tenantId) {
+  if (!claim || claim.outlet.restaurantId !== session!.restaurantId) {
     return NextResponse.json({ error: "Claim not found." }, { status: 404 });
   }
   if (session!.role === "OUTLET_STAFF" && claim.outletId !== session!.outletId) {
@@ -20,6 +21,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   const points = pointsForAmountPaise(claim.amountPaise);
+  const membership = await getOrCreateMembership(claim.customerId, claim.outlet.restaurantId);
 
   await prisma.$transaction([
     prisma.billClaim.update({
@@ -28,7 +30,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }),
     prisma.pointsLedgerEntry.create({
       data: {
-        customerId: claim.customerId,
+        membershipId: membership.id,
         delta: points,
         reason: "bill_claim_approved",
         billClaimId: claim.id,

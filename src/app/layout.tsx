@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ShakeWallah Rewards",
-  description: "Earn and redeem ShakeWallah loyalty points.",
+  title: "Rewards",
+  description: "One app, every restaurant's loyalty program.",
   manifest: "/manifest.json",
 };
 
