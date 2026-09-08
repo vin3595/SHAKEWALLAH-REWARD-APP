@@ -66,6 +66,12 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
               Segments &amp; campaigns →
             </Link>
           </div>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-stone-700">Loyalty</h2>
+            <Link href={`/staff/${slug}/tiers`} className="text-sm text-rose-700 underline">
+              Tiers &amp; earn rates →
+            </Link>
+          </div>
         </section>
       )}
     </main>

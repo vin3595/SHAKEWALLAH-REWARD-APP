@@ -130,6 +130,29 @@ campaign message — "sending" credits points and records who was targeted,
 but customers don't get notified out-of-band. That's the natural next
 piece once notifications exist at all (see below).
 
+## Loyalty tiers
+
+Each restaurant can define its own tiers at `/staff/[slug]/tiers` (brand
+admin only) — a name, a lifetime-spend threshold in rupees, and an earn
+rate in points per ₹100 spent (`src/lib/tiers.ts`). A restaurant that
+never sets any up just uses the platform default (10 pts/₹100 = 1pt/₹10,
+same rate the platform launched with) — tiers are additive, not required.
+
+- A membership is placed in the **highest tier its lifetime approved
+  spend at that restaurant has crossed**, recalculated after every
+  approved claim.
+- Tiers are **upgrade-only**: a membership never drops to a lower tier
+  even if you edit thresholds later. (Changing a tier's numbers also
+  doesn't retroactively move existing memberships — they re-evaluate on
+  their next approved claim, not immediately.)
+- The rate used for a claim is the tier the customer was in **before**
+  that claim — crossing a threshold takes effect on the *next* purchase,
+  not retroactively on the one that got them there. Verified: a customer
+  who crossed ShakeWallah's Gold threshold earned that crossing claim at
+  the old (Silver) rate, then the following claim at the new (Gold) rate.
+- The restaurant profile page shows the customer's current tier and, if
+  there's a higher one, how much more spend it takes to reach it.
+
 ## What's stubbed or deferred
 
 Deliberately out of scope for this pass — flagged here instead of half-built:
@@ -141,8 +164,7 @@ Deliberately out of scope for this pass — flagged here instead of half-built:
 - **Bill OCR**: claims require the customer to type the bill number and
   amount by hand; there's no automatic reading of the bill photo. Needs a
   vision/OCR provider (Google Cloud Vision, or a multimodal LLM call).
-- **Referrals, streaks, badges, tiers beyond "Member"**: schema has room
-  (`Membership.tier` is just a string today) but no logic yet.
+- **Referrals, streaks, badges**: not built. Tiers *are* built (see above).
 - **POS integrations**: bill claims are entirely manual/self-reported.
 - **Campaign delivery**: see above — segments and bonuses work, outbound
   notification doesn't exist.

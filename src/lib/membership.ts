@@ -22,7 +22,7 @@ export async function getMembershipBalance(membershipId: string) {
 export async function listCustomerWallets(customerId: string) {
   const memberships = await prisma.membership.findMany({
     where: { customerId },
-    include: { restaurant: true },
+    include: { restaurant: true, tier: true },
     orderBy: { joinedAt: "desc" },
   });
 
@@ -30,7 +30,7 @@ export async function listCustomerWallets(customerId: string) {
     memberships.map(async (membership) => ({
       membershipId: membership.id,
       restaurant: membership.restaurant,
-      tier: membership.tier,
+      tier: membership.tier?.name ?? "Member",
       balance: await getMembershipBalance(membership.id),
     }))
   );

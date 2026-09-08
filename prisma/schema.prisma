@@ -33,14 +33,37 @@ model Restaurant {
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
 
-  outlets    Outlet[]
-  rewards    Reward[]
-  staffUsers StaffUser[]
+  outlets     Outlet[]
+  rewards     Reward[]
+  staffUsers  StaffUser[]
   memberships Membership[]
-  segments   Segment[]
-  campaigns  Campaign[]
+  segments    Segment[]
+  campaigns   Campaign[]
+  tiers       Tier[]
 
   @@index([active, category])
+}
+
+// A restaurant-defined loyalty tier (Silver/Gold/Platinum, its own
+// names). Tiers are optional — a restaurant with none configured just
+// uses the flat DEFAULT_POINTS_PER_100 rate (see src/lib/tiers.ts).
+// minLifetimeSpend is in rupees; a membership qualifies for the highest
+// tier whose threshold its lifetime approved spend at this restaurant
+// has crossed. Convention: define a base tier at 0 so every member has
+// one from the start.
+model Tier {
+  id               String   @id @default(cuid())
+  restaurantId     String
+  restaurant       Restaurant @relation(fields: [restaurantId], references: [id])
+  name             String
+  minLifetimeSpend Int      @default(0)
+  pointsPer100     Int
+  createdAt        DateTime @default(now())
+
+  memberships Membership[]
+
+  @@unique([restaurantId, name])
+  @@index([restaurantId, minLifetimeSpend])
 }
 
 // One physical location. qrToken is printed once and never rotates.
@@ -84,7 +107,8 @@ model Membership {
   customer     Customer   @relation(fields: [customerId], references: [id])
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-  tier         String     @default("Member")
+  tierId       String?
+  tier         Tier?      @relation(fields: [tierId], references: [id])
   joinedAt     DateTime   @default(now())
 
   ledgerEntries      PointsLedgerEntry[]

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireStaff } from "@/lib/guards";
 import { pointsForAmountPaise } from "@/lib/points";
 import { getOrCreateMembership } from "@/lib/membership";
+import { effectivePointsPer100, recalculateTier } from "@/lib/tiers";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { session, error } = await requireStaff();
@@ -20,8 +21,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: `Claim already ${claim.status.toLowerCase()}.` }, { status: 409 });
   }
 
-  const points = pointsForAmountPaise(claim.amountPaise);
   const membership = await getOrCreateMembership(claim.customerId, claim.outlet.restaurantId);
+  const membershipWithTier = await prisma.membership.findUniqueOrThrow({
+    where: { id: membership.id },
+    include: { tier: true },
+  });
+  const points = pointsForAmountPaise(claim.amountPaise, effectivePointsPer100(membershipWithTier.tier));
 
   await prisma.$transaction([
     prisma.billClaim.update({
@@ -37,6 +42,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       },
     }),
   ]);
+
+  // Uses the spend total now that the claim above is committed as
+  // APPROVED — must run after the transaction, not inside it.
+  await recalculateTier(membership.id);
 
   return NextResponse.json({ ok: true, pointsAwarded: points });
 }

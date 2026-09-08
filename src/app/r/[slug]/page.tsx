@@ -4,6 +4,7 @@ import { getSession } from "@/lib/session";
 import { getRestaurantBySlug } from "@/lib/restaurant";
 import { prisma } from "@/lib/prisma";
 import { getMembershipBalance } from "@/lib/membership";
+import { getTierProgress } from "@/lib/tiers";
 
 export default async function RestaurantProfilePage({ params }: { params: Promise<{ slug: string }> }) {
   const session = await getSession();
@@ -17,8 +18,10 @@ export default async function RestaurantProfilePage({ params }: { params: Promis
   const outlets = await prisma.outlet.findMany({ where: { restaurantId: restaurant.id } });
   const membership = await prisma.membership.findUnique({
     where: { customerId_restaurantId: { customerId: session.sub, restaurantId: restaurant.id } },
+    include: { tier: true },
   });
   const balance = membership ? await getMembershipBalance(membership.id) : null;
+  const progress = await getTierProgress(session.sub, restaurant.id);
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col gap-6 px-6 py-10">
@@ -37,9 +40,17 @@ export default async function RestaurantProfilePage({ params }: { params: Promis
 
       {membership && (
         <section className="rounded-lg border border-stone-200 bg-white p-6 text-center">
-          <p className="text-xs uppercase tracking-wide text-stone-500">Your balance · {membership.tier}</p>
+          <p className="text-xs uppercase tracking-wide text-stone-500">
+            Your balance · {membership.tier?.name ?? "Member"}
+          </p>
           <p className="mt-1 text-4xl font-semibold tabular-nums text-rose-700">{balance}</p>
           <p className="text-sm text-stone-500">points</p>
+          {progress?.nextTier && (
+            <p className="mt-3 text-xs text-stone-500">
+              ₹{Math.max(0, progress.nextTier.minLifetimeSpend - progress.spend).toLocaleString("en-IN")} more spend
+              to reach {progress.nextTier.name}
+            </p>
+          )}
         </section>
       )}
 

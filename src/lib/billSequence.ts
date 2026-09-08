@@ -39,13 +39,16 @@ export async function checkBillSequence(
   const seq = numericSeq(billNo);
   if (seq === null) return { ok: true }; // no digits to compare — skip
 
+  // Strict < / > only: two bills at the exact same timestamp (e.g. two
+  // claims minute-rounded into the same datetime-local value) give no
+  // usable ordering information, so they're skipped rather than flagged.
   const [predecessor, successor] = await Promise.all([
     prisma.billClaim.findFirst({
-      where: { outletId, status: { not: "REJECTED" }, billDate: { lte: billDate } },
+      where: { outletId, status: { not: "REJECTED" }, billDate: { lt: billDate } },
       orderBy: { billDate: "desc" },
     }),
     prisma.billClaim.findFirst({
-      where: { outletId, status: { not: "REJECTED" }, billDate: { gte: billDate } },
+      where: { outletId, status: { not: "REJECTED" }, billDate: { gt: billDate } },
       orderBy: { billDate: "asc" },
     }),
   ]);
