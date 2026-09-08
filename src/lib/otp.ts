@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { OtpPurpose } from "@/generated/prisma/client";
+import { isSmsConfigured, sendOtpSms } from "@/lib/sms";
 
 const OTP_TTL_MINUTES = 10;
 const MAX_ATTEMPTS = 5;
@@ -8,10 +9,11 @@ function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-// Dev mode has no SMS provider wired up: the code is logged server-side
-// and (outside production) also returned to the caller so the flow is
-// testable end to end. Wire a real provider (MSG91 recommended for
-// Indian numbers) here before going live.
+// Without MSG91 configured, the code is logged server-side and returned
+// to the caller so the flow is testable end to end (safe: this only
+// happens when no real provider is set up, regardless of environment).
+// Once MSG91_AUTH_KEY / MSG91_OTP_TEMPLATE_ID are set, this sends a real
+// SMS and never returns the code.
 export async function requestOtp(
   tenantId: string,
   phone: string,
@@ -24,9 +26,13 @@ export async function requestOtp(
     data: { tenantId, phone, purpose, code, expiresAt },
   });
 
-  console.log(`[otp] ${purpose} ${phone} code=${code} (expires in ${OTP_TTL_MINUTES}m)`);
+  if (isSmsConfigured()) {
+    await sendOtpSms(phone, code);
+    return { devCode: undefined };
+  }
 
-  return { devCode: process.env.NODE_ENV === "production" ? undefined : code };
+  console.log(`[otp] ${purpose} ${phone} code=${code} (expires in ${OTP_TTL_MINUTES}m)`);
+  return { devCode: code };
 }
 
 export async function verifyOtp(

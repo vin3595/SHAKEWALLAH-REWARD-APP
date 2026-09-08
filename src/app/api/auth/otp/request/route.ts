@@ -26,6 +26,11 @@ export async function POST(req: Request) {
     }
   }
 
-  const { devCode } = await requestOtp(tenant.id, phone, purpose);
-  return NextResponse.json({ ok: true, devCode });
+  try {
+    const { devCode } = await requestOtp(tenant.id, phone, purpose);
+    return NextResponse.json({ ok: true, devCode });
+  } catch (err) {
+    console.error("[otp] send failed", err);
+    return NextResponse.json({ error: "Couldn't send the code. Try again shortly." }, { status: 502 });
+  }
 }

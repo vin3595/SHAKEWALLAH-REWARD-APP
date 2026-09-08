@@ -55,11 +55,29 @@ Guardrails already in place: a bill number can only be claimed once per
 outlet, a customer is capped at 5 claims/day, and a redemption code can
 only be fulfilled once.
 
+## SMS provider setup (MSG91)
+
+OTP delivery is wired to [MSG91](https://msg91.com)'s Flow API
+(`src/lib/sms.ts`) but stays in **dev mode** — the code is logged and
+returned in the API response, no SMS sent — until you set:
+
+```
+MSG91_AUTH_KEY=<your auth key>            # Console → API → Auth Key
+MSG91_OTP_TEMPLATE_ID=<your template id>  # Console → Flow → your OTP template
+```
+
+You'll need a DLT-registered transactional template (required for Indian
+SMS) with a single variable — name it `OTP` — e.g.:
+
+> Your ShakeWallah verification code is ##OTP##. Valid for 10 minutes.
+
+Once both env vars are set, `requestOtp` (`src/lib/otp.ts`) sends a real
+SMS automatically — no code changes needed. To use a different provider
+(Twilio, etc.), only `src/lib/sms.ts` needs to change; its two exports
+(`isSmsConfigured`, `sendOtpSms`) are the whole contract.
+
 ## What's stubbed for later
 
-- **SMS**: OTPs aren't actually sent. Wire a provider (MSG91 is a solid
-  default for Indian numbers) in `src/lib/otp.ts` and remove the `devCode`
-  passthrough before going live.
 - **Bill photo storage**: local disk under `public/uploads`. Swap
   `src/lib/storage.ts` for Supabase Storage / S3 with signed URLs.
 - **PWA installability**: `public/manifest.json` exists but has no icons
