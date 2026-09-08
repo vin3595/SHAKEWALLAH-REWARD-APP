@@ -3,9 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+// YYYY-MM-DDTHH:mm in local time, as <input type="datetime-local"> expects.
+function nowForDateTimeLocal() {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
 export function ClaimForm({ outletToken }: { outletToken: string }) {
   const router = useRouter();
   const [billNo, setBillNo] = useState("");
+  const [billDate, setBillDate] = useState(nowForDateTimeLocal);
   const [amountRupees, setAmountRupees] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +30,7 @@ export function ClaimForm({ outletToken }: { outletToken: string }) {
     const form = new FormData();
     form.set("outletToken", outletToken);
     form.set("billNo", billNo);
+    form.set("billDate", new Date(billDate).toISOString());
     form.set("amountRupees", amountRupees);
     form.set("photo", photo);
 
@@ -59,6 +69,18 @@ export function ClaimForm({ outletToken }: { outletToken: string }) {
           placeholder="As printed on the receipt"
           className="rounded border border-stone-300 px-3 py-2 outline-none focus:border-rose-600"
         />
+      </label>
+      <label className="flex flex-col gap-1 text-sm">
+        Date &amp; time on the bill
+        <input
+          required
+          type="datetime-local"
+          value={billDate}
+          max={nowForDateTimeLocal()}
+          onChange={(e) => setBillDate(e.target.value)}
+          className="rounded border border-stone-300 px-3 py-2 outline-none focus:border-rose-600"
+        />
+        <span className="text-xs text-stone-500">Must be claimed within 24 hours of this time.</span>
       </label>
       <label className="flex flex-col gap-1 text-sm">
         Bill amount (₹)

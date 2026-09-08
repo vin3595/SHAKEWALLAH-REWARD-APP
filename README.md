@@ -93,8 +93,22 @@ matching a white-label-per-brand app) — a customer needs to belong to
    restaurant's staff (verified end to end, including token expiry).
 
 Guardrails already in place: a bill number can only be claimed once per
-outlet, a customer is capped at 5 claims/day platform-wide, and a
-redemption code can only be fulfilled once.
+outlet, a customer is capped at 5 claims/day platform-wide, a redemption
+code can only be fulfilled once, and two bill-specific checks
+(`src/lib/billSequence.ts`):
+
+- **24-hour claim window** — the customer enters the bill's own date/time
+  (not when they happen to open the app), and the claim is rejected if
+  that's more than 24h in the past or in the future.
+- **Bill-number sequence check** — receipt numbers are sequential over
+  time in virtually every POS/GST-compliant billing system, so a new
+  claim is rejected if its (numeric part of the) bill number is out of
+  order relative to the nearest already-claimed bills at that outlet by
+  date — e.g. once bill #23 is claimed, a later-dated bill can't claim a
+  *lower* number, and an earlier-dated bill can't claim a *higher* one.
+  Only checked against non-rejected claims, and skipped entirely if a
+  bill number has no digits to compare. Verified with prefixed bill
+  numbers too (e.g. "INV-0024" slots in fine between #23 and #25).
 
 ## Restaurant CRM (segments & campaigns)
 

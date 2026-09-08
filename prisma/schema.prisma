@@ -149,6 +149,9 @@ enum ClaimStatus {
 
 // A customer's self-reported bill, pending outlet staff confirmation.
 // (outletId, billNo) is unique so the same bill can't be claimed twice.
+// billDate is the date/time printed on the receipt (not createdAt, which
+// is when the claim was submitted) — it drives the 24h claim window and
+// the bill-number sequence check in src/lib/billSequence.ts.
 model BillClaim {
   id           String      @id @default(cuid())
   outletId     String
@@ -156,6 +159,7 @@ model BillClaim {
   customerId   String
   customer     Customer    @relation(fields: [customerId], references: [id])
   billNo       String
+  billDate     DateTime
   amountPaise  Int
   photoUrl     String
   status       ClaimStatus @default(PENDING)
@@ -169,6 +173,7 @@ model BillClaim {
   @@unique([outletId, billNo])
   @@index([customerId])
   @@index([outletId, status])
+  @@index([outletId, billDate])
 }
 
 // Append-only. A wallet's balance is Σ(delta), never a stored column —

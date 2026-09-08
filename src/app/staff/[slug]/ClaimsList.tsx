@@ -6,11 +6,19 @@ import { useRouter } from "next/navigation";
 type Claim = {
   id: string;
   billNo: string;
+  billDate: Date;
   amountPaise: number;
   photoUrl: string;
   customer: { phone: string; name: string | null };
   outlet: { name: string };
 };
+
+const dateFormatter = new Intl.DateTimeFormat("en-IN", {
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 export function ClaimsList({ initialClaims, showOutlet }: { initialClaims: Claim[]; showOutlet: boolean }) {
   const router = useRouter();
@@ -66,7 +74,7 @@ export function ClaimsList({ initialClaims, showOutlet }: { initialClaims: Claim
               {claim.customer.name ?? claim.customer.phone} · ₹{(claim.amountPaise / 100).toFixed(2)}
             </p>
             <p className="text-stone-500">
-              Bill #{claim.billNo}
+              Bill #{claim.billNo} · {dateFormatter.format(new Date(claim.billDate))}
               {showOutlet ? ` · ${claim.outlet.name}` : ""}
             </p>
             <div className="mt-1 flex gap-2">
