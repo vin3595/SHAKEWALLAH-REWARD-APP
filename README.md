@@ -10,20 +10,34 @@ this repo for the full platform vision and phased roadmap.
 ## Stack
 
 - **App**: Next.js (App Router) + Tailwind — customer app, staff dashboard, and restaurant CRM all in one codebase
-- **Database**: SQLite for local dev via Prisma, swappable to Postgres for production
+- **Database**: Postgres via Prisma (any standard Postgres works — Prisma Postgres, Supabase, Neon, Railway, etc.)
 - **Auth**: Phone number + OTP (dev mode logs the code to the console; MSG91 wiring included, see below)
 - **Bill photos**: saved to `public/uploads` in dev — swap for object storage in production
+
+## Database setup
+
+You need a Postgres connection string before anything else works. Easiest
+path with [Prisma Postgres](https://console.prisma.io):
+
+1. Sign in at console.prisma.io, create a new project/database, pick a region.
+2. Copy its connection string into `DATABASE_URL` in `.env` (copy `.env.example` first).
+
+Any other Postgres provider's connection string works the same way — the
+app has no Prisma-Postgres-specific code, just a standard `postgresql://` URL.
 
 ## Getting started
 
 ```bash
+cp .env.example .env        # then fill in DATABASE_URL and SESSION_SECRET
 npm install                 # also runs `prisma generate`
-npm run db:migrate          # creates prisma/dev.db and applies the schema
+npm run db:migrate          # applies the schema to your database
 npm run db:seed             # seeds two demo restaurants (ShakeWallah + Bite Box)
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000. (`npm run build` — used in production/Vercel —
+runs `prisma migrate deploy` automatically first; `db:migrate` above uses
+`migrate dev`, the interactive version, for local schema changes.)
 
 Seeded staff logins (OTP, dev mode — the code is returned in the API
 response and printed server-side, no real SMS is sent):
@@ -192,14 +206,24 @@ SMS automatically — no code changes needed. To use a different provider
 (Twilio, etc.), only `src/lib/sms.ts` needs to change; its two exports
 (`isSmsConfigured`, `sendOtpSms`) are the whole contract.
 
-## Moving to Postgres
+## Deploying to Vercel
 
-Local dev uses SQLite for zero-setup. For production:
+1. Get a `DATABASE_URL` (see Database setup above) and a `SESSION_SECRET`
+   (`openssl rand -base64 32`).
+2. On vercel.com: **Add New → Project**, import this repo, pick the branch
+   to deploy.
+3. Under **Environment Variables**, add `DATABASE_URL` and `SESSION_SECRET`
+   (and the `MSG91_*` ones if you have them). Deploy.
 
-1. In `prisma/schema.prisma`, change the datasource `provider` to `"postgresql"`.
-2. Swap the driver adapter in `src/lib/prisma.ts` (and `prisma/seed.ts`)
-   from `@prisma/adapter-better-sqlite3` to `@prisma/adapter-pg`.
-3. Point `DATABASE_URL` at your Postgres instance and re-run `prisma migrate dev`.
+`npm run build` runs `prisma migrate deploy` before `next build`
+(`package.json`), so the database schema is applied automatically on every
+deploy — no separate migration step to remember. First deploy creates all
+the tables; later deploys only apply whatever's new.
+
+The initial migration (`prisma/migrations/20260908000000_init`) was
+generated offline with `prisma migrate diff --from-empty` rather than
+against a live database — useful to know if you ever need to regenerate a
+baseline migration without a reachable Postgres instance in front of you.
 
 ## Project layout
 

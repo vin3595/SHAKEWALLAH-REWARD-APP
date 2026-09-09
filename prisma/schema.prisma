@@ -1,6 +1,5 @@
 // Prisma schema for the universal restaurant rewards platform.
-// Local dev uses SQLite (zero setup). Swap the datasource provider to
-// "postgresql" for production — see README for the Prisma Postgres note.
+// Postgres (Prisma Postgres or any standard Postgres) — see README for setup.
 //
 // Core identity model: Customer is GLOBAL (one identity across every
 // restaurant), and Membership is the per-restaurant wallet — that's what
@@ -13,7 +12,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 // One row per restaurant/café/QSR on the platform. ShakeWallah is
